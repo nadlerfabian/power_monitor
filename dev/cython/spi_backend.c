@@ -23,7 +23,7 @@ int spi_init() {
     }
     bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);
     bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);
-    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_128); // 2 MHz
+    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_256); // 1.5625MHz   According to the datasheet of the MCP3201 the max SPI clock speed is 1.6MHz
     printf("SPI initialized successfully!\n");
     return 1; // Success
 }

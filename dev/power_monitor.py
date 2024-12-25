@@ -12,11 +12,13 @@ import numpy as np
 import pandas as pd
 import spi_reader
 
-# Initialize SPI
-# spi = spidev.SpiDev()
+# Initialize SPI    LEGACY: Python SPI Init                          
+# spi = spidev.SpiDev()         
 # spi.open(0, 0)  # Bus 0, Device 0 (but using custom /CS pin)
 # spi.max_speed_hz = 2000000  # 2 MHz, MCP3201 supports up to 2 MHz
 # spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
+
+# Initialize SPI
 spi_reader.initialize_spi()
 
 # CSV file setup
@@ -58,7 +60,7 @@ with open(csv_file, mode='a', newline='') as file:
     if file.tell() == 0:  # If file is empty, write the header
         writer.writerow(csv_header)
 
-# Function to read data from MCP3201
+# Function to read data from MCP3201        LEGACY: SPI read function
 # def read_mcp3201():
 #     raw_data = spi.xfer2([0x00, 0x00])  # MCP3201 expects 16 clock cycles
 #     adc_value = ((raw_data[0] & 0x1F) << 7) | (raw_data[1] >> 1)  # Combine 12-bit ADC value
@@ -67,20 +69,19 @@ with open(csv_file, mode='a', newline='') as file:
 # Function to read waveform
 def read_waveform(max_samples=5000, sample_duration=40):
     """Read waveform samples for a specified duration."""
+    # LEGACY Python Sample Collection
     # samples = []
     # start_time = time.time()
 
     # while time.time() - start_time < sample_duration:
     #     adc_value = read_mcp3201()
     #     samples.append(adc_value)
-    print(time.time())
-    samples = spi_reader.collect_samples(5000, sample_duration) # Max buffer size: 2000, Duration: 40ms
-    print(time.time())
+    samples = spi_reader.collect_samples(max_samples, sample_duration) # Buffer size, Duration
     print(f"Taken Samples Amount: {len(samples)}, Samples taken: {samples}")
     return samples
 
 # Function to extract positive half-cycle
-def extract_positive_half_cycle(samples, min_samples=400, baseline=5, breakThreshold=3, ZcdThreshold=10):
+def extract_positive_half_cycle(samples, min_samples=350, baseline=5, breakThreshold=3, ZcdThreshold=10):
     """Extract a clean positive half-cycle from the waveform."""
     zeroCrossFlag = False
     start_idx = None
@@ -121,7 +122,7 @@ def calculate_peak_and_rms(samples):
     samples_voltage = [(sample / 4095.0) * 5.1 for sample in samples]
 
     # Convert voltage to current using sensor sensitivity
-    sensitivity = 0.4  # Example: 0.4 V/A for TMCS1100A4
+    sensitivity = 0.4  # 0.4 V/A for TMCS1100A4 according to datasheet
     samples_current = [voltage / sensitivity for voltage in samples_voltage]
 
     # Calculate RMS value
@@ -137,9 +138,9 @@ try:
     while True:
         gc.disable()
         # Read waveform for a longer duration
-        samples = read_waveform(max_samples=5000, sample_duration=40)
+        samples = read_waveform(max_samples=4000, sample_duration=40)       # 4000 is the maximum possible amount of samples in 0.04s, according to the datasheet of the MCP3201 (100ksps at 5V)
         # Extract positive half-cycle
-        positive_samples = extract_positive_half_cycle(samples, baseline=5, breakThreshold=3, ZcdThreshold=10)
+        positive_samples = extract_positive_half_cycle(samples, min_samples=350, baseline=5, breakThreshold=3, ZcdThreshold=10)
 
         current_logging_index, logging_rows_written = update_dataframe(logging_df, len(positive_samples), len(samples), current_logging_index, logging_rows_written)
 
