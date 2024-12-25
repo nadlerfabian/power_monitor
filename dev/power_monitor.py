@@ -1,3 +1,5 @@
+import sys
+sys.path.append('./cython')  # Adjust this path to point to the subdirectory
 import spidev
 import time
 import math
@@ -8,12 +10,14 @@ import os
 import psutil
 import numpy as np
 import pandas as pd
+import spi_reader
 
 # Initialize SPI
-spi = spidev.SpiDev()
-spi.open(0, 0)  # Bus 0, Device 0 (but using custom /CS pin)
-spi.max_speed_hz = 2000000  # 2 MHz, MCP3201 supports up to 2 MHz
-spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
+# spi = spidev.SpiDev()
+# spi.open(0, 0)  # Bus 0, Device 0 (but using custom /CS pin)
+# spi.max_speed_hz = 2000000  # 2 MHz, MCP3201 supports up to 2 MHz
+# spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
+spi_reader.initialize_spi()
 
 # CSV file setup
 csv_file = "../data/power_usage.csv"
@@ -54,35 +58,26 @@ with open(csv_file, mode='a', newline='') as file:
     if file.tell() == 0:  # If file is empty, write the header
         writer.writerow(csv_header)
 
-def set_high_priority():
-    pid = os.getpid()
-    p = psutil.Process(pid)
-    try:
-        p.nice(-20)  # Set highest priority (Linux only)
-    except psutil.AccessDenied:
-        print("Permission denied: Unable to set high priority.")
-
 # Function to read data from MCP3201
-def read_mcp3201():
-    raw_data = spi.xfer2([0x00, 0x00])  # MCP3201 expects 16 clock cycles
-    adc_value = ((raw_data[0] & 0x1F) << 7) | (raw_data[1] >> 1)  # Combine 12-bit ADC value
-    return adc_value
+# def read_mcp3201():
+#     raw_data = spi.xfer2([0x00, 0x00])  # MCP3201 expects 16 clock cycles
+#     adc_value = ((raw_data[0] & 0x1F) << 7) | (raw_data[1] >> 1)  # Combine 12-bit ADC value
+#     return adc_value
 
 # Function to read waveform
-def read_waveform(sample_duration=0.04):
+def read_waveform(max_samples=5000, sample_duration=40):
     """Read waveform samples for a specified duration."""
-    samples = []
-    start_time = time.time()
+    # samples = []
+    # start_time = time.time()
 
-    while time.time() - start_time < sample_duration:
-        adc_value = read_mcp3201()
-        samples.append(adc_value)
+    # while time.time() - start_time < sample_duration:
+    #     adc_value = read_mcp3201()
+    #     samples.append(adc_value)
+    print(time.time())
+    samples = spi_reader.collect_samples(5000, sample_duration) # Max buffer size: 2000, Duration: 40ms
+    print(time.time())
     print(f"Taken Samples Amount: {len(samples)}, Samples taken: {samples}")
     return samples
-
-def moving_average(data, window=5):
-    """Apply a simple moving average filter to the data."""
-    return np.convolve(data, np.ones(window) / window, mode='same')
 
 # Function to extract positive half-cycle
 def extract_positive_half_cycle(samples, min_samples=30, baseline=5, outlierTolerance=3):
@@ -93,7 +88,7 @@ def extract_positive_half_cycle(samples, min_samples=30, baseline=5, outlierTole
 
     for i in range(1, len(samples) - 1):
         # Detect the first rising edge (start of the half-cycle)
-        if(start_idx is None and not zeroCrossFlag):
+        if(start_idx is None and len(samples) > i + outlierTolerance and not zeroCrossFlag and all(samples[i + k] < baseline for k in range(outlierTolerance + 1))):
             if(samples[i] < baseline):
                 zeroCrossFlag = True
         if(zeroCrossFlag):
@@ -140,12 +135,9 @@ def calculate_peak_and_rms(samples):
 
 try:
     while True:
-        print(time.time())
         gc.disable()
-        set_high_priority()
-        os.nice(-20)  # Highest priority
         # Read waveform for a longer duration
-        samples = read_waveform(sample_duration=0.04)
+        samples = read_waveform(max_samples=5000, sample_duration=40)
         # Extract positive half-cycle
         positive_samples = extract_positive_half_cycle(samples, baseline=5)
 
@@ -180,4 +172,4 @@ try:
 except KeyboardInterrupt:
     print("Exiting...")
 finally:
-    spi.close()
+    spi_reader.close_spi()
