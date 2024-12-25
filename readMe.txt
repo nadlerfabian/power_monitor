@@ -39,3 +39,15 @@ Start/Stop systemctl Services:
 
     sudo systemctl start power_monitor.service
     sudo systemctl start dashboard.service
+
+Compiling new C solution:
+    Necessary files:
+        setup.py
+        spi_reader.pyx
+        spi_backend.c
+        spi_backend.h
+    Commands:
+        find . -name "*.c" -delete
+        find . -name "*.so" -delete
+        rm -rf build
+        python3 setup.py build_ext --inplace

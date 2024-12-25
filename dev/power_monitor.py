@@ -80,7 +80,7 @@ def read_waveform(max_samples=5000, sample_duration=40):
     return samples
 
 # Function to extract positive half-cycle
-def extract_positive_half_cycle(samples, min_samples=30, baseline=5, outlierTolerance=3):
+def extract_positive_half_cycle(samples, min_samples=400, baseline=5, breakThreshold=3, ZcdThreshold=10):
     """Extract a clean positive half-cycle from the waveform."""
     zeroCrossFlag = False
     start_idx = None
@@ -88,16 +88,16 @@ def extract_positive_half_cycle(samples, min_samples=30, baseline=5, outlierTole
 
     for i in range(1, len(samples) - 1):
         # Detect the first rising edge (start of the half-cycle)
-        if(start_idx is None and len(samples) > i + outlierTolerance and not zeroCrossFlag and all(samples[i + k] < baseline for k in range(outlierTolerance + 1))):
+        if(start_idx is None and len(samples) > i + ZcdThreshold and not zeroCrossFlag and all(samples[i + k] == 0 for k in range(ZcdThreshold + 1))):
             if(samples[i] < baseline):
                 zeroCrossFlag = True
         if(zeroCrossFlag):
             if(start_idx is None and samples[i] > baseline):
                 start_idx = i
-            elif(start_idx and len(samples) > i + outlierTolerance and all(samples[i + k] < baseline for k in range(outlierTolerance + 1))):   # Checks if we really reached the bottom, this helps at dealing with faulty values for example: [58, 44, 60, 79, 1, 97, 81, 47, 47], here sample loop wont break due to the 1 value
+            elif(start_idx and len(samples) > i + breakThreshold and all(samples[i + k] < baseline for k in range(breakThreshold + 1))):   # Checks if we really reached the bottom, this helps at dealing with faulty values for example: [58, 44, 60, 79, 1, 97, 81, 47, 47], here sample loop wont break due to the 1 value
                 end_idx = i
                 if(end_idx-start_idx < min_samples):
-                    start_idx = end_idx+outlierTolerance + 1
+                    start_idx = end_idx+breakThreshold + 1
                     end_idx = None
                 else:
                     break
@@ -139,7 +139,7 @@ try:
         # Read waveform for a longer duration
         samples = read_waveform(max_samples=5000, sample_duration=40)
         # Extract positive half-cycle
-        positive_samples = extract_positive_half_cycle(samples, baseline=5)
+        positive_samples = extract_positive_half_cycle(samples, baseline=5, breakThreshold=3, ZcdThreshold=10)
 
         current_logging_index, logging_rows_written = update_dataframe(logging_df, len(positive_samples), len(samples), current_logging_index, logging_rows_written)
 
