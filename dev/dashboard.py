@@ -2,7 +2,7 @@ import dash
 from dash import dcc, html, Input, Output
 import pandas as pd
 import plotly.express as px
-
+import datetime as dt
 # Load and preprocess data
 data_file = "../data/power_usage.csv"
 def load_data():
@@ -34,6 +34,9 @@ def try_load_data():
         return pd.DataFrame(columns=['DateTime', 'Year', 'Month', 'Day', 'Hour', 'Power(kW)', 'Energy(kWh)'])
 
 data = try_load_data()
+currentYear = dt.date.today().year
+valid_years = sorted(data['Year'].unique())
+currentYear = currentYear if currentYear in valid_years else (valid_years[-1] if valid_years else None)
 
 # German month names
 MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
@@ -43,23 +46,96 @@ app = dash.Dash(__name__, external_scripts=['https://cdn.plot.ly/plotly-latest.m
 app.title = "Power Usage Dashboard"
 
 # Layout
-app.layout = html.Div([
-    html.H1("Power Usage Dashboard", style={"textAlign": "center", "marginBottom": "20px"}),
-    html.Div([
-        dcc.Dropdown(
-            id='year-selector',
-            options=[{'label': str(year), 'value': year} for year in sorted(data['Year'].unique())],
-            placeholder="Select Year",
-            style={"width": "50%", "margin": "auto"}
+# Layout Design
+app.layout = html.Div(
+    style={
+        "fontFamily": "Arial, sans-serif",
+        "backgroundColor": "#f4f4f4",
+        "padding": "10px",
+        "minHeight": "100vh"
+    },
+    children=[
+        # Header
+        html.Div(
+            style={
+                "backgroundColor": "#2C3E50",
+                "color": "#ECF0F1",
+                "padding": "20px",
+                "textAlign": "center",
+                "borderRadius": "8px",
+                "marginBottom": "20px"
+            },
+            children=[
+                html.H1("Power Usage Dashboard", style={"margin": "0px", "fontWeight": "bold"}),
+                html.P("Visualize your power usage data with interactive charts and detailed summaries."),
+            ]
         ),
-        html.Button("Refresh Data", id='refresh-data-button', style={"marginTop": "10px"}),
-        html.Div(id='live-values', style={"textAlign": "center", "marginTop": "20px"})
-    ], style={"textAlign": "center", "marginBottom": "20px"}),
-    dcc.Graph(id='yearly-overview'),
-    dcc.Graph(id='monthly-detail', style={'display': 'none'}),
-    dcc.Graph(id='daily-detail', style={'display': 'none'}),
-    dcc.Graph(id='hourly-detail', style={'display': 'none'}),
-])
+
+        # Content Wrapper
+        html.Div(
+            style={
+                "display": "flex",
+                "flexDirection": "row",
+                "gap": "20px",
+                "margin": "0 auto",
+                "maxWidth": "1200px"
+            },
+            children=[
+                # Sidebar
+                html.Div(
+                    style={
+                        "width": "25%",
+                        "backgroundColor": "#ECF0F1",
+                        "padding": "20px",
+                        "borderRadius": "8px",
+                        "boxShadow": "0px 4px 6px rgba(0,0,0,0.1)"
+                    },
+                    children=[
+                        html.H3("Controls", style={"marginBottom": "10px", "textAlign": "center"}),
+                        dcc.Dropdown(
+                            id='year-selector',
+                            options=[{'label': str(year), 'value': year} for year in valid_years],
+                            value=currentYear,
+                            style={"marginBottom": "20px", "borderRadius": "4px"}
+                        ),
+                        html.Button(
+                            "Refresh Data",
+                            id='refresh-data-button',
+                            style={
+                                "width": "100%",
+                                "padding": "10px",
+                                "backgroundColor": "#2980B9",
+                                "color": "#fff",
+                                "border": "none",
+                                "borderRadius": "4px",
+                                "cursor": "pointer"
+                            }
+                        ),
+                        html.Div(id='live-values', style={"marginTop": "20px", "textAlign": "center"})
+                    ]
+                ),
+
+                # Main Content
+                html.Div(
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "#fff",
+                        "padding": "20px",
+                        "borderRadius": "8px",
+                        "boxShadow": "0px 4px 6px rgba(0,0,0,0.1)"
+                    },
+                    children=[
+                        dcc.Graph(id='yearly-overview', style={"marginBottom": "20px"}),
+                        dcc.Graph(id='monthly-detail', style={'display': 'none'}),
+                        dcc.Graph(id='daily-detail', style={'display': 'none'}),
+                        dcc.Graph(id='hourly-detail', style={'display': 'none'}),
+                    ]
+                )
+            ]
+        )
+    ]
+)
+
 
 # Callbacks for interactivity
 @app.callback(
@@ -193,7 +269,9 @@ def refresh_data(n_clicks):
     global data
     data = try_load_data()
     options = [{'label': str(year), 'value': year} for year in sorted(data['Year'].unique())]
-    return options, None
+    default_year = dt.date.today().year if dt.date.today().year in data['Year'].unique() else None
+    return options, default_year
+
 
 @app.callback(
     Output('live-values', 'children'),

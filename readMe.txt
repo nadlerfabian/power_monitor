@@ -82,3 +82,22 @@ Compiling new C solution:
         find . -name "*.so" -delete
         rm -rf build
         python3 setup.py build_ext --inplace
+
+
+#########################################
+Network Managment (WiFi)
+#########################################
+
+Check currently defined known networks:
+    - nmcli connection show
+Add a new network:
+    - nmcli connection add type wifi ssid "SSID OF THE NETWORK" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "PASSWORD OF THE NETWORK" connection.id "Hotspot_S24"
+Manually connect to a existing network:
+    - nmcli connection up "Hotspot_S24"
+Set connection priorities to network:
+    - nmcli connection modify "Hotspot_S24" connection.autoconnect-priority 10
+    - nmcli connection modify "Sunrise_Wi-Fi_3B0620" connection.autoconnect-priority 5
+Network connection history:
+    - sudo journalctl -u NetworkManager -f
+
+
