@@ -1,216 +1,184 @@
-import dash
-from dash import dcc, html, Input, Output
+import sys
+sys.path.append('./cython')  # Adjust this path to point to the subdirectory
+import spidev
+import time
+import math
+import csv
+from datetime import datetime
+import gc
+import os
+import psutil
+import numpy as np
 import pandas as pd
-import plotly.express as px
-import datetime as dt
+import spi_reader
 
-# Load and preprocess data
-data_file = "../data/power_usage.csv"
-def load_data():
-    df = pd.read_csv(data_file, parse_dates=['DateTime'])
-    df['DateTime'] = pd.to_datetime(df['DateTime'])
-    df = df.sort_values(by='DateTime')
-    df['Year'] = df['DateTime'].dt.year
-    df['Month'] = df['DateTime'].dt.month
-    df['Day'] = df['DateTime'].dt.day
-    df['Hour'] = df['DateTime'].dt.hour
-    df['Minute'] = df['DateTime'].dt.minute
+# Initialize SPI    LEGACY: Python SPI Init                          
+# spi = spidev.SpiDev()         
+# spi.open(0, 0)  # Bus 0, Device 0 (but using custom /CS pin)
+# spi.max_speed_hz = 2000000  # 2 MHz, MCP3201 supports up to 2 MHz
+# spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
 
-    # Calculate time intervals in seconds and energy (kWh)
-    df['delta_t'] = df['DateTime'].diff().dt.total_seconds().fillna(0)
+# Initialize SPI
+spi_reader.initialize_spi()
 
-    # Cap delta_t to a reasonable maximum (e.g., 10 seconds)
-    MAX_DELTA_T = 10  # Adjust this value based on expected measurement frequency
-    df['delta_t'] = df['delta_t'].apply(lambda x: min(x, MAX_DELTA_T))
+# CSV file setup
+csv_file = "../data/power_usage.csv"
+csv_header = ["DateTime", "Peak_Current(A)", "RMS_Current(A)", "Power(kW)"]
 
-    # Calculate energy (kWh)
-    df['Energy(kWh)'] = (df['Power(kW)'] * df['delta_t']) / 3600
-    return df
+# For Logging purpose
+# Initialize the DataFrame with 500 rows and the specified columns
+max_logging_entries = 500
+logging_data = {
+    "PosSamples": [0] * max_logging_entries,
+    "TotalSamples": [0] * max_logging_entries
+}
+logging_df = pd.DataFrame(logging_data)
 
-def try_load_data():
-    try:
-        return load_data()
-    except Exception as e:
-        print(f"Error loading data: {e}")
-        return pd.DataFrame(columns=['DateTime', 'Year', 'Month', 'Day', 'Hour', 'Power(kW)', 'Energy(kWh)'])
+# Circular index counter
+current_logging_index = 0
+logging_rows_written = 0  # Track how many rows have been written
 
-data = try_load_data()
-currentYear = dt.date.today().year
-# German month names
-MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
-
-# Initialize Dash app
-app = dash.Dash(__name__, external_scripts=['https://cdn.plot.ly/plotly-latest.min.js'])
-app.title = "Power Usage Dashboard"
-
-# Layout
-app.layout = html.Div([
-    html.H1("Power Usage Dashboard", style={"textAlign": "center", "marginBottom": "20px"}),
-    html.Div([
-        dcc.Dropdown(
-            id='year-selector',
-            options=[{'label': str(year), 'value': year} for year in sorted(data['Year'].unique())],
-            value=currentYear,
-            style={"width": "50%", "margin": "auto"}
-        ),
-        html.Button("Refresh Data", id='refresh-data-button', style={"marginTop": "10px"}),
-        html.Div(id='live-values', style={"textAlign": "center", "marginTop": "20px"})
-    ], style={"textAlign": "center", "marginBottom": "20px"}),
-    dcc.Graph(id='yearly-overview'),
-    dcc.Graph(id='monthly-detail', style={'display': 'none'}),
-    dcc.Graph(id='daily-detail', style={'display': 'none'}),
-    dcc.Graph(id='hourly-detail', style={'display': 'none'}),
-])
-
-# Callbacks for interactivity
-@app.callback(
-    Output('yearly-overview', 'figure'),
-    Input('year-selector', 'value')
-)
-def update_yearly_overview(selected_year):
-    if selected_year is None or data.empty:
-        return px.bar(title="Please select a year to view power usage.")
-
-    yearly_data = data[data['Year'] == selected_year]
-    if yearly_data.empty:
-        return px.bar(title=f"No data available for {selected_year}.")
-
-    monthly_summary = yearly_data.groupby('Month').agg({
-        'Energy(kWh)': 'sum'
-    }).reindex(range(1, 13), fill_value=0).reset_index()
-    monthly_summary['Formatted Energy'] = monthly_summary['Energy(kWh)'].apply(lambda x: f"{x:.4f}")
-    fig = px.bar(
-        monthly_summary, 
-        x='Month', 
-        y='Energy(kWh)', 
-        title=f"Total Monthly Power Usage for {selected_year} (kWh)",
-        labels={"Energy(kWh)": "Total Energy (kWh)", "Month": "Month"},
-        text="Formatted Energy"
-    )
-    fig.update_traces(customdata=monthly_summary['Month'], hoverinfo="x+y")
-    fig.update_xaxes(
-        ticktext=MONTH_NAMES, 
-        tickvals=list(range(1, 13)),
-    )
-    return fig
-
-@app.callback(
-    [Output('monthly-detail', 'figure'), Output('monthly-detail', 'style')],
-    [Input('yearly-overview', 'clickData'), Input('year-selector', 'value')]
-)
-def update_monthly_detail(clickData, selected_year):
-    if clickData is None or selected_year is None:
-        return {}, {'display': 'none'}
-
-    selected_month = clickData['points'][0]['customdata']
-
-    monthly_data = data[(data['Year'] == selected_year) & (data['Month'] == selected_month)]
-
-    daily_summary = monthly_data.groupby('Day').agg({
-        'Energy(kWh)': 'sum'
-    }).reindex(range(1, 32), fill_value=0).reset_index()
-    daily_summary['Formatted Energy'] = daily_summary['Energy(kWh)'].apply(lambda x: f"{x:.4f}")
-    fig = px.bar(
-        daily_summary, 
-        x='Day', 
-        y='Energy(kWh)', 
-        title=f"Total Daily Power Usage for {selected_year}-{MONTH_NAMES[selected_month-1]} (kWh)",
-        labels={"Energy(kWh)": "Total Energy (kWh)", "Day": "Day"},
-        text="Formatted Energy"
-    )
-    fig.update_traces(customdata=daily_summary['Day'], hoverinfo="x+y")
-    fig.update_xaxes(range=[0.5, 31.5],)
-    return fig, {'display': 'block'}
-
-@app.callback(
-    [Output('daily-detail', 'figure'), Output('daily-detail', 'style')],
-    [Input('monthly-detail', 'clickData'), Input('year-selector', 'value'), Input('yearly-overview', 'clickData')]
-)
-def update_daily_detail(clickData, selected_year, yearly_clickData):
-    if clickData is None or selected_year is None or yearly_clickData is None:
-        return {}, {'display': 'none'}
-
-    selected_day = clickData['points'][0]['customdata']
-    selected_month = yearly_clickData['points'][0]['customdata']
-
-    daily_data = data[(data['Year'] == selected_year) & (data['Month'] == selected_month) & (data['Day'] == selected_day)]
-
-    hourly_summary = daily_data.groupby('Hour').agg({
-        'Energy(kWh)': 'sum'
-    }).reindex(range(0, 24), fill_value=0).reset_index()
-    hourly_summary['Formatted Energy'] = hourly_summary['Energy(kWh)'].apply(lambda x: f"{x:.4f}")
-
-    fig = px.bar(
-        hourly_summary, 
-        x='Hour', 
-        y='Energy(kWh)', 
-        title=f"Total Hourly Power Usage for {selected_year}-{MONTH_NAMES[selected_month-1]}-{selected_day:02d}",
-        labels={"Energy(kWh)": "Energy (kWh)", "Hour": "Hour"},
-        text="Formatted Energy"
-    )
-    fig.update_traces(customdata=hourly_summary['Hour'], hoverinfo="x+y")
-    fig.update_xaxes(range=[-0.5, 23.5],)
-    return fig, {'display': 'block'}
-
-@app.callback(
-    [Output('hourly-detail', 'figure'), Output('hourly-detail', 'style')],
-    [Input('daily-detail', 'clickData'), Input('year-selector', 'value'), Input('yearly-overview', 'clickData'), Input('monthly-detail', 'clickData')]
-)
-def update_hourly_detail(clickData, selected_year, yearly_clickData, monthly_clickData):
-    if clickData is None or selected_year is None or yearly_clickData is None:
-        return {}, {'display': 'none'}
-
-    selected_hour = clickData['points'][0]['customdata']
-    selected_day = monthly_clickData['points'][0]['customdata']
-    selected_month = yearly_clickData['points'][0]['customdata']
-    hourly_data = data[(data['Year'] == selected_year) & (data['Month'] == selected_month) & (data['Day'] == selected_day) & (data['Hour'] == selected_hour)]
-    minute_summary = hourly_data.groupby('Minute').agg({
-        'Power(kW)': 'mean'
-    }).reindex(range(0, 60), fill_value=0).reset_index()
-    minute_summary['Formatted Energy'] = minute_summary['Power(kW)'].apply(lambda x: f"{x:.3f}")
-    fig = px.bar(
-        minute_summary,
-        x='Minute',  # Minutes
-        y='Power(kW)',
-        title=f"Power Usage for {selected_year}-{MONTH_NAMES[selected_month-1]}-{selected_day:02d} {selected_hour:02d}:00",
-        labels={"Power(kW)": "Power(kW)", "Minute": "Minute"},
-        text="Formatted Energy"
-    )
+# Update the DataFrame
+def update_dataframe(df, pos_samples, total_samples, current_index, rows_written):
+    """
+    Update the DataFrame at the current circular index with new values.
+    """
+    # Write data into the current index
+    df.at[current_index, "PosSamples"] = pos_samples
+    df.at[current_index, "TotalSamples"] = total_samples
     
-    # Set x-axis range and ticks
-    fig.update_xaxes(
-        range=[-0.5, 59.5],  # Ensure full minute range is shown
-        tickvals=list(range(0, 60)),  # Force minute ticks
-        ticktext=[f"{selected_hour:02d}:{minute:02d}" for minute in range(0, 60)],  # Format as %H:%M
-    )
-    return fig, {'display': 'block'}
+    # Update the circular index
+    current_index = (current_index + 1) % max_logging_entries
+    rows_written = min(rows_written + 1, max_logging_entries)  # Increment written rows, cap at max_entries
+
+    return current_index, rows_written
+
+# Create or append to the CSV file
+with open(csv_file, mode='a', newline='') as file:
+    writer = csv.writer(file)
+    file.seek(0, 2)  # Move to the end of the file
+    if file.tell() == 0:  # If file is empty, write the header
+        writer.writerow(csv_header)
+
+# Function to read data from MCP3201        LEGACY: SPI read function
+# def read_mcp3201():
+#     raw_data = spi.xfer2([0x00, 0x00])  # MCP3201 expects 16 clock cycles
+#     adc_value = ((raw_data[0] & 0x1F) << 7) | (raw_data[1] >> 1)  # Combine 12-bit ADC value
+#     return adc_value
+
+# Function to read waveform
+def read_waveform(max_samples=5000, sample_duration=40):
+    """Read waveform samples for a specified duration."""
+    # LEGACY Python Sample Collection
+    # samples = []
+    # start_time = time.time()
+
+    # while time.time() - start_time < sample_duration:
+    #     adc_value = read_mcp3201()
+    #     samples.append(adc_value)
+    samples, timestamps = spi_reader.collect_samples(max_samples, sample_duration) # Buffer size, Duration
+    print(f"Taken Samples Amount: {len(samples)}, Samples taken: {samples}")
+    return samples, timestamps
+
+# Function to extract positive half-cycle
+def extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10):
+    """Extract a clean positive half-cycle from the waveform."""
+    zeroCrossFlag = False
+    start_idx = None
+    end_idx = None
+    np_samples = np.array(samples)
+    if(np_samples.max() < 250):
+        min_samples = 20
+    for i in range(1, len(samples) - 1):
+        # Detect the first rising edge (start of the half-cycle)
+        if(start_idx is None and len(samples) > i + ZcdThreshold and not zeroCrossFlag and all(samples[i + k] == 0 for k in range(ZcdThreshold + 1))):
+            if(samples[i] < baseline):
+                zeroCrossFlag = True
+        if(zeroCrossFlag):
+            if(start_idx is None and samples[i] > baseline):
+                start_idx = i
+            elif(start_idx and len(samples) > i + breakThreshold and all(samples[i + k] < baseline for k in range(breakThreshold + 1))):   # Checks if we really reached the bottom, this helps at dealing with faulty values for example: [58, 44, 60, 79, 1, 97, 81, 47, 47], here sample loop wont break due to the 1 value
+                end_idx = i
+                if(end_idx-start_idx < min_samples):
+                    start_idx = end_idx+breakThreshold + 1
+                    end_idx = None
+                else:
+                    break
+    # If no valid cycle is detected, return an empty list
+    if not end_idx:
+        print("No valid positive half-cycle detected.")
+        return [], []
+    print(f"Measure start: {timestamps[start_idx]} / Measure stop: {timestamps[end_idx]}")
+    alternation_time_us = timestamps[end_idx] - timestamps[start_idx]
+    zero_compensation = math.floor((end_idx-start_idx)/alternation_time_us * (10000 - alternation_time_us))
+    positive_samples = samples[start_idx:end_idx]
+    full_alternation = positive_samples.copy()
+    for x in range(zero_compensation):
+        full_alternation.append(0)
+    return positive_samples, full_alternation
 
 
-@app.callback(
-    [Output('year-selector', 'options'), Output('year-selector', 'value')],
-    Input('refresh-data-button', 'n_clicks')
-)
-def refresh_data(n_clicks):
-    global data
-    data = try_load_data()
-    options = [{'label': str(year), 'value': year} for year in sorted(data['Year'].unique())]
-    return options, None
 
-@app.callback(
-    Output('live-values', 'children'),
-    Input('refresh-data-button', 'n_clicks')
-)
-def update_live_values(n_clicks):
-    try:
-        latest_row = pd.read_csv(data_file).iloc[-1]
-        power = latest_row['Power(kW)']
-        peak_current = latest_row.get('RMS_Current(A)', 'N/A')
-        return [
-            html.Div(f"Live Power Consumption: {power:.3f} kW", style={"marginTop": "10px"}),
-            html.Div(f"Live Current Consumption: {peak_current:.3f} A", style={"marginTop": "10px"})
-        ]
-    except Exception as e:
-        return html.Div(f"Error fetching live data: {e}", style={"marginTop": "10px", "color": "red"})
+# Function to calculate peak and RMS current
+def calculate_peak_and_rms(samples, full_alternation):
+    if len(samples) == 0:
+        return 0, 0  # No samples collected
 
-if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
+    print(f"Positive Sample Amount: {len(samples)} / Zero compensation: {(len(full_alternation)-len(samples))} / Positive Samples: {samples}")
+
+    # Convert samples to voltage
+    samples_voltage = [(sample / 4095.0) * 5.1 for sample in positive_samples]
+
+    # Convert voltage to current using sensor sensitivity
+    sensitivity = 0.4  # 0.4 V/A for TMCS1100A4 according to datasheet
+    samples_current = [voltage / sensitivity for voltage in samples_voltage]
+    
+    # Calculate RMS value
+    rms_value = np.sqrt(np.mean(np.square(samples_current)))
+
+    # Peak value (max of the samples)
+    peak_voltage = max(samples_voltage)
+    peak_current = peak_voltage / sensitivity
+
+    return peak_current, rms_value
+
+try:
+    while True:
+        gc.disable()
+        # Read waveform for a longer duration
+        samples, timestamps = read_waveform(max_samples=4000, sample_duration=40)       # 4000 is the maximum possible amount of samples in 0.04s, according to the datasheet of the MCP3201 (100ksps at 5V)
+        # Extract positive half-cycle
+        positive_samples, full_alternation = extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10)
+
+        current_logging_index, logging_rows_written = update_dataframe(logging_df, len(positive_samples), len(samples), current_logging_index, logging_rows_written)
+
+        # If positive samples are found, calculate metrics
+        if positive_samples is not None:
+            # Calculate peak and RMS current
+            peak_current, rms_current = calculate_peak_and_rms(positive_samples, full_alternation)
+
+            # Calculate power
+            power_used = (rms_current * 230 * 0.9) / 1000  # Power in kW
+
+            # Get current time
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Log to CSV
+            with open(csv_file, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([current_time, round(peak_current, 6), round(rms_current, 6), round(power_used, 6)])
+
+            # Print the results
+            print(f"Peak Current: {peak_current:.2f}A, RMS Current: {rms_current:.2f}A, Power Usage: {power_used:.2f}kW")
+            temp_logging_df = logging_df.iloc[:logging_rows_written]
+            print(f"Avg Total Samples: {temp_logging_df['TotalSamples'].mean():.2f} / Avg Positive Samples: {temp_logging_df['PosSamples'].mean():.2f} / Min Total Samples: {temp_logging_df['TotalSamples'].min()} / Min Positive Samples: {temp_logging_df['PosSamples'].min()} / Null Pos Values (Amount): {sum(temp_logging_df['PosSamples'] == 0)}")
+        else:
+            print("No valid positive half-cycle detected or insufficient samples.")
+
+        gc.enable()
+        time.sleep(10)  # Perform detection every 10 seconds
+
+except KeyboardInterrupt:
+    print("Exiting...")
+finally:
+    spi_reader.close_spi()

@@ -41,6 +41,14 @@ currentYear = currentYear if currentYear in valid_years else (valid_years[-1] if
 # German month names
 MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
 
+# Power tariffs
+TARIFFS = {
+    "base_price": 8.00,  # CHF/month
+    "energy_price": 13.40 / 100,  # CHF per kWh (converted from Rp./kWh)
+    "system_services": 0.55 / 100,  # CHF per kWh
+    "reserve_services": 0.23 / 100,  # CHF per kWh
+}
+
 # Initialize Dash app
 app = dash.Dash(__name__, external_scripts=['https://cdn.plot.ly/plotly-latest.min.js'])
 app.title = "Power Usage Dashboard"
@@ -111,7 +119,8 @@ app.layout = html.Div(
                                 "cursor": "pointer"
                             }
                         ),
-                        html.Div(id='live-values', style={"marginTop": "20px", "textAlign": "center"})
+                        html.Div(id='live-values', style={"marginTop": "20px", "textAlign": "center"}),
+                        html.Div(id='cost-summary', style={"marginTop": "20px", "textAlign": "center"})
                     ]
                 ),
 
@@ -149,7 +158,6 @@ def update_yearly_overview(selected_year):
     yearly_data = data[data['Year'] == selected_year]
     if yearly_data.empty:
         return px.bar(title=f"No data available for {selected_year}.")
-
     monthly_summary = yearly_data.groupby('Month').agg({
         'Energy(kWh)': 'sum'
     }).reindex(range(1, 13), fill_value=0).reset_index()
@@ -170,16 +178,28 @@ def update_yearly_overview(selected_year):
     return fig
 
 @app.callback(
-    [Output('monthly-detail', 'figure'), Output('monthly-detail', 'style')],
+    [Output('monthly-detail', 'figure'), Output('monthly-detail', 'style'), Output('cost-summary', 'children')],
     [Input('yearly-overview', 'clickData'), Input('year-selector', 'value')]
 )
 def update_monthly_detail(clickData, selected_year):
     if clickData is None or selected_year is None:
-        return {}, {'display': 'none'}
+        return {}, {'display': 'none'},  html.Div([
+            html.H4("Monthly Cost Summary", style={"marginBottom": "10px"}),
+            html.P("No data available, select a month")])
 
     selected_month = clickData['points'][0]['customdata']
 
     monthly_data = data[(data['Year'] == selected_year) & (data['Month'] == selected_month)]
+    # Cost calculation for the month
+    total_energy = monthly_data['Energy(kWh)'].sum()
+    total_cost = (total_energy * (TARIFFS['energy_price'] + TARIFFS['system_services'] + TARIFFS['reserve_services']))
+    total_cost += TARIFFS['base_price']  # Add monthly base price
+
+    cost_summary = html.Div([
+        html.H4("Monthly Cost Summary", style={"marginBottom": "10px"}),
+        html.P(f"Total Energy Used: {total_energy:.2f} kWh"),
+        html.P(f"Estimated Total Cost: CHF {total_cost:.2f}")
+    ])
 
     daily_summary = monthly_data.groupby('Day').agg({
         'Energy(kWh)': 'sum'
@@ -194,8 +214,8 @@ def update_monthly_detail(clickData, selected_year):
         text="Formatted Energy"
     )
     fig.update_traces(customdata=daily_summary['Day'], hoverinfo="x+y")
-    fig.update_xaxes(range=[0.5, 31.5],)
-    return fig, {'display': 'block'}
+    fig.update_xaxes(range=[0.5, 31.5],dtick=1)
+    return fig, {'display': 'block'}, cost_summary
 
 @app.callback(
     [Output('daily-detail', 'figure'), Output('daily-detail', 'style')],
@@ -224,7 +244,7 @@ def update_daily_detail(clickData, selected_year, yearly_clickData):
         text="Formatted Energy"
     )
     fig.update_traces(customdata=hourly_summary['Hour'], hoverinfo="x+y")
-    fig.update_xaxes(range=[-0.5, 23.5],)
+    fig.update_xaxes(range=[-0.5, 23.5],dtick=1)
     return fig, {'display': 'block'}
 
 @app.callback(
