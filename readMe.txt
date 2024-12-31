@@ -4,7 +4,7 @@ Credentials
 
 # Login:
 # ssh pi@raspberryPi
-# password: arduino
+# password: What's better than a Rapsberry?.lower()
 
 #########################################
 Wiring
