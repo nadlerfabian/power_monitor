@@ -21,7 +21,7 @@ def collect_samples(int max_samples, int duration_ms):
     Collect as many samples as possible within the given duration (ms), along with their timestamps.
     :param max_samples: Maximum buffer size for samples.
     :param duration_ms: Time duration to collect samples in milliseconds.
-    :return: Tuple of two lists: (samples, timestamps).
+    :return: Two lists (samples, timestamps).
     """
     cdef np.ndarray[np.uint16_t, ndim=1] samples = np.zeros(max_samples, dtype=np.uint16)
     cdef np.ndarray[np.uint64_t, ndim=1] timestamps = np.zeros(max_samples, dtype=np.uint64)

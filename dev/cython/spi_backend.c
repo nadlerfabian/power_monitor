@@ -5,10 +5,11 @@
 #include <stdio.h>
 
 // Get the current time in milliseconds (private function)
-static uint64_t current_time_ms() {
+
+static uint64_t current_time_us() {
     struct timespec spec;
     clock_gettime(CLOCK_MONOTONIC, &spec);
-    return (uint64_t)(spec.tv_sec * 1000 + spec.tv_nsec / 1000000);
+    return (uint64_t)(spec.tv_sec * 1000000 + spec.tv_nsec / 1000);
 }
 
 // Initialize SPI
@@ -35,14 +36,14 @@ void spi_close() {
 }
 
 // Collect samples and their timestamps
-int spi_collect_samples_with_timestamps(uint16_t *samples, uint64_t *timestamps, int max_samples, int duration_ms) {
+int spi_collect_samples(uint16_t *samples, uint64_t *timestamps, int max_samples, int duration_ms) {
     char tx_buf[2] = {0};
     char rx_buf[2] = {0};
-    uint64_t start_time = current_time_ms();
+    uint64_t start_time = current_time_us();
     uint64_t current_time;
     int sample_count = 0;
 
-    while ((current_time = current_time_ms()) - start_time < (uint64_t)duration_ms) {
+    while ((current_time = current_time_us() - start_time)  < ((uint64_t)duration_ms*1000)) {
         if (sample_count >= max_samples) {
             break; // Avoid exceeding buffer size
         }

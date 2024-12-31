@@ -107,34 +107,42 @@ def extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5
     # If no valid cycle is detected, return an empty list
     if not end_idx:
         print("No valid positive half-cycle detected.")
-        return [], []
-    print(f"Measure start: {timestamps[start_idx]} / Measure stop: {timestamps[end_idx]}")
-    alternation_time_us = timestamps[end_idx] - timestamps[start_idx]
-    zero_compensation = math.floor((end_idx-start_idx)/alternation_time_us * (10000 - alternation_time_us))
-    positive_samples = samples[start_idx:end_idx]
-    full_alternation = positive_samples.copy()
-    for x in range(zero_compensation):
-        full_alternation.append(0)
-    return positive_samples, full_alternation
+        return 0, 0
+    
+    return start_idx, end_idx
 
 
 
 # Function to calculate peak and RMS current
-def calculate_peak_and_rms(samples, full_alternation):
-    if len(samples) == 0:
+def calculate_peak_and_rms(samples, timestamps, start_idx, end_idx, total_cycle_time_ms=10):
+    if start_idx == end_idx:
         return 0, 0  # No samples collected
 
-    print(f"Positive Sample Amount: {len(samples)} / Zero compensation: {(len(full_alternation)-len(samples))} / Positive Samples: {samples}")
+    total_cycle_time_us = total_cycle_time_ms * 1000
+
+    pos_samples = samples[start_idx:end_idx]
+    pos_timestamps = np.array(timestamps[start_idx:end_idx])
+    print(f"Positive Sample Amount: {len(pos_samples)} / Positive Samples: {pos_samples}")
 
     # Convert samples to voltage
-    samples_voltage = [(sample / 4095.0) * 5.1 for sample in positive_samples]
+    samples_voltage = [(sample / 4095.0) * 5.0 for sample in pos_samples]
 
     # Convert voltage to current using sensor sensitivity
     sensitivity = 0.4  # 0.4 V/A for TMCS1100A4 according to datasheet
-    samples_current = [voltage / sensitivity for voltage in samples_voltage]
+    samples_current = np.array([voltage / sensitivity for voltage in samples_voltage])
     
-    # Calculate RMS value
-    rms_value = np.sqrt(np.mean(np.square(samples_current)))
+     # Calculate time intervals (Δt)
+    time_intervals = np.diff(pos_timestamps)  # Δt = timestamps[i+1] - timestamps[i]
+
+    # Calculate total measured time (T_measured)
+    T_measured = np.sum(time_intervals)
+    print(f"Time measured: {T_measured}")
+
+     # Calculate RMS contribution from measured samples
+    measured_rms_contribution = np.sum(samples_current[:-1] ** 2 * time_intervals)  # Sum(I^2 * Δt)
+
+    # Calculate final RMS
+    rms_value = np.sqrt((measured_rms_contribution) / total_cycle_time_us)
 
     # Peak value (max of the samples)
     peak_voltage = max(samples_voltage)
@@ -148,14 +156,15 @@ try:
         # Read waveform for a longer duration
         samples, timestamps = read_waveform(max_samples=4000, sample_duration=40)       # 4000 is the maximum possible amount of samples in 0.04s, according to the datasheet of the MCP3201 (100ksps at 5V)
         # Extract positive half-cycle
-        positive_samples, full_alternation = extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10)
+        start_idx, end_idx = extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10)
 
-        current_logging_index, logging_rows_written = update_dataframe(logging_df, len(positive_samples), len(samples), current_logging_index, logging_rows_written)
+        current_logging_index, logging_rows_written = update_dataframe(logging_df, len(samples[start_idx:end_idx]), len(samples), current_logging_index, logging_rows_written)
 
         # If positive samples are found, calculate metrics
-        if positive_samples is not None:
+        if start_idx != end_idx and len(samples[start_idx:end_idx]) > 0:
+
             # Calculate peak and RMS current
-            peak_current, rms_current = calculate_peak_and_rms(positive_samples, full_alternation)
+            peak_current, rms_current = calculate_peak_and_rms(samples, timestamps, start_idx, end_idx, 10)
 
             # Calculate power
             power_used = (rms_current * 230 * 0.9) / 1000  # Power in kW
