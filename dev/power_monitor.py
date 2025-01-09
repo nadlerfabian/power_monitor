@@ -15,7 +15,7 @@ import spi_reader
 # Initialize SPI    LEGACY: Python SPI Init                          
 # spi = spidev.SpiDev()         
 # spi.open(0, 0)  # Bus 0, Device 0 (but using custom /CS pin)
-# spi.max_speed_hz = 2000000  # 2 MHz, MCP3201 supports up to 2 MHz
+# spi.max_speed_hz = 1600000  # 2 MHz, MCP3201 supports up to 1.6 MHz
 # spi.mode = 0b00  # SPI Mode 0 (CPOL=0, CPHA=0)
 
 # Initialize SPI
@@ -81,7 +81,7 @@ def read_waveform(max_samples=5000, sample_duration=40):
     return samples, timestamps
 
 # Function to extract positive half-cycle
-def extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10):
+def extract_positive_half_cycle(samples, min_samples=150, baseline=5, breakThreshold=50, ZcdThreshold=10):
     """Extract a clean positive half-cycle from the waveform."""
     zeroCrossFlag = False
     start_idx = None
@@ -125,7 +125,7 @@ def calculate_peak_and_rms(samples, timestamps, start_idx, end_idx, total_cycle_
     print(f"Positive Sample Amount: {len(pos_samples)} / Positive Samples: {pos_samples}")
 
     # Convert samples to voltage
-    samples_voltage = [(sample / 4095.0) * 5.0 for sample in pos_samples]
+    samples_voltage = [(sample / 4095.0) * 5.0 for sample in pos_samples]   # 5.0 for reference voltage on the MCP3201
 
     # Convert voltage to current using sensor sensitivity
     sensitivity = 0.4  # 0.4 V/A for TMCS1100A4 according to datasheet
@@ -153,10 +153,10 @@ def calculate_peak_and_rms(samples, timestamps, start_idx, end_idx, total_cycle_
 try:
     while True:
         gc.disable()
-        # Read waveform for a longer duration
+        # Read waveform 
         samples, timestamps = read_waveform(max_samples=4000, sample_duration=40)       # 4000 is the maximum possible amount of samples in 0.04s, according to the datasheet of the MCP3201 (100ksps at 5V)
         # Extract positive half-cycle
-        start_idx, end_idx = extract_positive_half_cycle(samples, timestamps, min_samples=150, baseline=5, breakThreshold=3, ZcdThreshold=10)
+        start_idx, end_idx = extract_positive_half_cycle(samples, min_samples=150, baseline=5, breakThreshold=50, ZcdThreshold=10)
 
         current_logging_index, logging_rows_written = update_dataframe(logging_df, len(samples[start_idx:end_idx]), len(samples), current_logging_index, logging_rows_written)
 
@@ -185,7 +185,7 @@ try:
             print("No valid positive half-cycle detected or insufficient samples.")
 
         gc.enable()
-        time.sleep(10)  # Perform detection every 10 seconds
+        time.sleep(10)  # Perform detection every ~10 seconds
 
 except KeyboardInterrupt:
     print("Exiting...")
