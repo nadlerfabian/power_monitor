@@ -36,7 +36,25 @@ Credentials are configured locally and are not stored in this repository.
 
 ## Requirements
 
+<<<<<<< HEAD
 ### Hardware
+=======
+
+#########################################
+Project Structure
+#########################################
+
+Main components:
+
+    setup.py        Cython build configuration
+    spi_reader.pyx  Python interface for the SPI backend
+    spi_backend.c   Low-level SPI implementation
+    spi_backend.h   SPI backend declarations
+
+#########################################
+Installation
+#########################################
+>>>>>>> 7bd6d6ca8642136154c476352d49aedc27519298
 
 * Raspberry Pi
 * MCP3201 ADC
