@@ -53,6 +53,18 @@ Software:
     - GCC
     - Cython
 
+
+#########################################
+Project Structure
+#########################################
+
+Main components:
+
+    setup.py        Cython build configuration
+    spi_reader.pyx  Python interface for the SPI backend
+    spi_backend.c   Low-level SPI implementation
+    spi_backend.h   SPI backend declarations
+
 #########################################
 Installation
 #########################################
