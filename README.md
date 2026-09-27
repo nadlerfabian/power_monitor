@@ -38,6 +38,22 @@ Wiring
 # GND TMCS1100 (GND)    6           NC                      Pin 5   
 
 #########################################
+Requirements
+#########################################
+
+Hardware:
+    - Raspberry Pi
+    - MCP3201 ADC
+    - TMCS1100 current sensor
+    - Breakout board
+
+Software:
+    - Raspberry Pi OS
+    - Python 3
+    - GCC
+    - Cython
+
+#########################################
 Required Libraries
 #########################################
 
