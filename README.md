@@ -67,7 +67,7 @@ Install Python dependencies:
 
     pip3 install dash --break-system-packages
     pip3 install plotly --break-system-packages
-    
+
 #########################################
 Required Libraries
 #########################################
@@ -86,31 +86,28 @@ Required Libraries
         - gcc               sudo apt install gcc
 
 #########################################
-Raspberry Pi autostart behaviour
+Usage
 #########################################
 
-Check program Status:
+Check whether the services are running:
+
     sudo systemctl status power_monitor.service
     sudo systemctl status dashboard.service
-Check history:
-    sudo journalctl -u power_monitor.service
-    sudo journalctl -u dashboard.service
 
-Edit Autostart behaviour:
-    sudo nano /etc/systemd/system/power_monitor.service
-    sudo nano /etc/systemd/system/dashboard.service
-
-    sudo systemctl daemon-reload
-
-    sudo systemctl enable power_monitor.service
-    sudo systemctl enable dashboard.service
-
-Stop/Start systemctl Services:
-    sudo systemctl stop power_monitor.service
-    sudo systemctl stop dashboard.service
+Start the services manually:
 
     sudo systemctl start power_monitor.service
     sudo systemctl start dashboard.service
+
+Stop the services:
+
+    sudo systemctl stop power_monitor.service
+    sudo systemctl stop dashboard.service
+
+View service logs:
+
+    sudo journalctl -u power_monitor.service
+    sudo journalctl -u dashboard.service
 
 #########################################
 Compiling new C solution
