@@ -1,3 +1,16 @@
+# Raspberry Pi Power Monitor
+
+This project implements a Raspberry Pi based power monitoring system.
+
+The Raspberry Pi reads current measurements through an MCP3201 ADC and a
+TMCS1100 current sensor. The collected measurements are processed and displayed
+in a Dash dashboard.
+
+The application consists of two main services:
+
+- Power monitoring and data acquisition
+- Web-based monitoring dashboard
+
 #########################################
 Remote Access
 #########################################
