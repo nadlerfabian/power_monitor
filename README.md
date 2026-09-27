@@ -54,6 +54,21 @@ Software:
     - Cython
 
 #########################################
+Installation
+#########################################
+
+Install system dependencies:
+
+    sudo apt update
+    sudo apt install python3-pandas python3-numpy python3-pip
+    sudo apt install cython3 bcm2835 python3-dev gcc
+
+Install Python dependencies:
+
+    pip3 install dash --break-system-packages
+    pip3 install plotly --break-system-packages
+    
+#########################################
 Required Libraries
 #########################################
 
